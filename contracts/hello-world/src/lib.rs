@@ -1,91 +1,36 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Address, Env};
+use soroban_sdk::{contract, contractimpl, Env, String};
 
 #[contract]
-pub struct Poap;
+pub struct Token;
 
 #[contractimpl]
-impl Poap {
-    /// Initialize the contract with the organizer address
-    pub fn init(env: Env, organizer: Address) {
-        env.storage().instance().set(&"organizer", &organizer);
+impl Token {
+    pub fn init(env: Env, admin: String) {
+        env.storage().instance().set(&"admin", &admin);
     }
 
-    /// Mint attendance proof to a recipient (organizer only)
-    pub fn mint(env: Env, recipient: Address, event_id: u64) {
-        let organizer: Address = env.storage().instance().get(&"organizer").unwrap();
-        let invoker: Address = env.source_account().unwrap();
-        if invoker != organizer {
-            panic!("not authorized");
+    pub fn mint(env: Env, to: String, amount: u64) {
+        let bal: u64 = env.storage().instance().get::<_, u64>(&to).unwrap_or(0);
+        env.storage().instance().set(&to, &(bal + amount));
+    }
+
+    pub fn transfer(env: Env, from: String, to: String, amount: u64) {
+        let from_bal: u64 = env.storage().instance().get::<_, u64>(&from).unwrap_or(0);
+        if from_bal < amount {
+            panic!("insufficient balance");
         }
-
-        let key = (event_id, recipient.clone());
-        if env.storage().instance().get::<_, bool>(&key).unwrap_or(false) {
-            panic!("already claimed");
-        }
-
-        env.storage().instance().set(&key, &true);
-        env.events().publish(("poap", "minted"), (event_id, recipient));
+        let to_bal: u64 = env.storage().instance().get::<_, u64>(&to).unwrap_or(0);
+        env.storage().instance().set(&from, &(from_bal - amount));
+        env.storage().instance().set(&to, &(to_bal + amount));
     }
 
-    /// Check if an attendee has claimed their proof for an event
-    pub fn is_claimed(env: Env, event_id: u64, attendee: Address) -> bool {
-        let key = (event_id, attendee);
-        env.storage().instance().get::<_, bool>(&key).unwrap_or(false)
+    pub fn balance_of(env: Env, account: String) -> u64 {
+        env.storage().instance().get::<_, u64>(&account).unwrap_or(0)
     }
 
-    /// Get the organizer address
-    pub fn organizer(env: Env) -> Address {
-        env.storage().instance().get(&"organizer").unwrap()
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use soroban_sdk::Env;
-    use crate::{Poap, PoapClient};
-
-    fn create_test_env() -> (Env, PoapClient<'static>) {
-        let env = Env::default();
-        let client = PoapClient::new(&env, &env.register_contract(None, crate::Poap));
-        (env, client)
-    }
-
-    #[test]
-    fn test_init_and_organizer() {
-        let (env, client) = create_test_env();
-        let organizer = Address::from_string(&"GDATOHIE23D2T5F6BK7LKCWBQM2DLDMXLCEKJHPWLOWSM6KGMZ3W3XXX".into_val(&env));
-
-        client.init(&organizer);
-        assert_eq!(client.organizer(), organizer);
-    }
-
-    #[test]
-    fn test_mint_and_claim() {
-        let (env, client) = create_test_env();
-        let organizer = Address::from_string(&"GDATOHIE23D2T5F6BK7LKCWBQM2DLDMXLCEKJHPWLOWSM6KGMZ3W3XXX".into_val(&env));
-        let recipient = Address::from_string(&"GAFOHIE23D2T5F6BK7LKCWBQM2DLDMXLCEKJHPWLOWSM6KGMZ3W3YYY".into_val(&env));
-
-        client.init(&organizer);
-
-        assert!(!client.is_claimed(&1, &recipient));
-
-        client.mint(&recipient, &1);
-
-        assert!(client.is_claimed(&1, &recipient));
-        assert!(!client.is_claimed(&2, &recipient));
-    }
-
-    #[test]
-    fn test_cannot_claim_twice() {
-        let (env, client) = create_test_env();
-        let organizer = Address::from_string(&"GDATOHIE23D2T5F6BK7LKCWBQM2DLDMXLCEKJHPWLOWSM6KGMZ3W3XXX".into_val(&env));
-        let recipient = Address::from_string(&"GAFOHIE23D2T5F6BK7LKCWBQM2DLDMXLCEKJHPWLOWSM6KGMZ3W3YYY".into_val(&env));
-
-        client.init(&organizer);
-        client.mint(&recipient, &1);
-
-        let result = std::panic::catch_unwind(|| client.mint(&recipient, &1));
-        assert!(result.is_err());
+    pub fn faucet(env: Env, to: String, amount: u64) {
+        let bal: u64 = env.storage().instance().get::<_, u64>(&to).unwrap_or(0);
+        env.storage().instance().set(&to, &(bal + amount));
     }
 }
